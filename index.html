@@ -69,6 +69,9 @@ input.qtd:hover{border-color:var(--line);background:var(--panel2)}
 input.qtd:focus{border-color:var(--accent);background:var(--panel);outline:none}
 input.qtd::-webkit-outer-spin-button,input.qtd::-webkit-inner-spin-button{opacity:.35}
 tr.editado td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.tagLV{display:inline-block;padding:0 6px;border-radius:99px;font-size:10px;font-weight:800;white-space:nowrap;
+  background:rgba(250,204,21,.18);color:#facc15;border:1px solid #facc15;vertical-align:middle}
+[data-tema="claro"] .tagLV{background:#fef9c3;color:#a16207;border-color:#eab308}
 .mkEd{color:var(--accent);margin-left:5px;font-size:11px}
 @media (max-width:700px){input.qtd{width:62px}}
 tr.inativo td{opacity:.45;text-decoration:line-through}
@@ -463,6 +466,9 @@ function agrupar(rows,keys,extra){
   });
   return [...m.values()];
 }
+/* Linha Viva: serviços com LV ou "LINHA VIVA" na descrição */
+const ehLV=t=>new RegExp("(^|[^A-Z])LV([^A-Z]|$)|LINHA\s*VIVA","i").test(String(t||""));
+const marcaLV=t=>ehLV(t)?' <span class="tagLV" title="Serviço de Linha Viva">⚡ LV</span>':"";
 const tag=s=>`<span class="tag t-${(s||"").charAt(0)||"X"}">${s||"—"}</span>`;
 /* Contrato pelo código de mão de obra: 5 dígitos iniciando em 6 = novo; demais (4 dígitos, ex. 1xxx) = antigo */
 const contratoDe=c=>/^6\d{4}$/.test(String(c||"").trim())?"novo":"antigo";
@@ -497,13 +503,13 @@ function render(){
     dados=rows.map(r=>({...r,qtd:r.qtd_mo_realizada,vlr:r.vlr_total_real}));
     head=[["num_obra","Nº da obra"],["descricao_municipio","Município"],["con","Contrato"],["cod_mobra","Cód. M.O."],["cd_mao_de_obra_descricao","Descrição da mão de obra"],["qtd","Qtd. realizada"],["vlr","Valor total"],["cc_situacao_medicao","Situação"]];
     ordenar(dados);
-    body=dados.slice(0,limite).map(r=>`<tr><td>${r.num_obra}</td><td>${r.descricao_municipio}</td><td>${badge(contratoDe(r.cod_mobra))}</td><td>${r.cod_mobra}</td><td>${r.cd_mao_de_obra_descricao}</td><td class="num">${nnum(r.qtd)}</td><td class="num">${brl(r.vlr)}</td><td>${tag(r.cc_situacao_medicao)}</td></tr>`).join("");
+    body=dados.slice(0,limite).map(r=>`<tr><td>${r.num_obra}</td><td>${r.descricao_municipio}</td><td>${badge(contratoDe(r.cod_mobra))}</td><td>${r.cod_mobra}</td><td>${esc(r.cd_mao_de_obra_descricao)}${marcaLV(r.cd_mao_de_obra_descricao)}</td><td class="num">${nnum(r.qtd)}</td><td class="num">${brl(r.vlr)}</td><td>${tag(r.cc_situacao_medicao)}</td></tr>`).join("");
   } else if(vista==="mo"){
     dados=agrupar(rows,["cod_mobra","cd_mao_de_obra_descricao"]);
     head=[["con","Contrato"],["cod_mobra","Cód. M.O."],["cd_mao_de_obra_descricao","Descrição da mão de obra"],["n","Lançamentos"],["qtd","Qtd. realizada"],["vlr","Valor total"]];
     if(!sortKey){sortKey="cd_mao_de_obra_descricao";sortDir=1}
     ordenar(dados);
-    body=dados.slice(0,limite).map(g=>`<tr><td>${badge(contratoDe(g.cod_mobra))}</td><td>${g.cod_mobra}</td><td>${g.cd_mao_de_obra_descricao}</td><td class="num">${g.n}</td><td class="num">${nnum(g.qtd)}</td><td class="num">${brl(g.vlr)}</td></tr>`).join("");
+    body=dados.slice(0,limite).map(g=>`<tr><td>${badge(contratoDe(g.cod_mobra))}</td><td>${g.cod_mobra}</td><td>${esc(g.cd_mao_de_obra_descricao)}${marcaLV(g.cd_mao_de_obra_descricao)}</td><td class="num">${g.n}</td><td class="num">${nnum(g.qtd)}</td><td class="num">${brl(g.vlr)}</td></tr>`).join("");
   } else if(vista==="conf"){
     return renderConfronto();
   } else {
@@ -632,7 +638,8 @@ function renderConfronto(){
              : g.pend>0? `<span class="tag s-pend">Pendente de pagamento</span>`
              : g.div>0? `<span class="tag s-maior">Divergência sem pendência</span>`
              : `<span class="tag s-ok">Conferida</span>`;
-    return `<tr class="obra" data-c="${g.obra}"><td>${g.obra}</td>
+    const temLV=g.itens.some(x=>ehLV(x.serv));
+    return `<tr class="obra" data-c="${g.obra}"><td>${g.obra}${temLV?' <span class="tagLV">⚡ LV</span>':""}</td>
       <td class="trunc" title="${esc(desc)}">${esc(desc)||"—"}</td><td>${esc(g.mun)}</td>
       <td>${(EQUIPES[g.obra]||{}).equipe? esc(EQUIPES[g.obra].equipe) : '<span class="muted">—</span>'}</td>
       <td class="num">${g.div}</td><td class="num">${g.conf}</td><td class="num">${g.inat||"—"}</td>
@@ -676,7 +683,7 @@ function desenharFichaConfronto(){
         <th class="num" data-k="vdif">Valor${seta("vdif")}</th>
         <th></th>
       </tr></thead><tbody>
-      ${it.map(x=>`<tr class="${x.inativo?"inativo":""}${x.editado?" editado":""}"><td>${x.cod}${x.editado?'<span class="mkEd" title="Quantidade editada">✎</span>':""}</td><td class="${x.op==="I"?"op-i":"op-r"}">${x.op==="I"?"▲ Inst.":"▼ Retir."}</td><td>${esc(x.serv)}</td>
+      ${it.map(x=>`<tr class="${x.inativo?"inativo":""}${x.editado?" editado":""}"><td>${x.cod}${x.editado?'<span class="mkEd" title="Quantidade editada">✎</span>':""}</td><td class="${x.op==="I"?"op-i":"op-r"}">${x.op==="I"?"▲ Inst.":"▼ Retir."}</td><td>${esc(x.serv)}${marcaLV(x.serv)}</td>
         <td class="num"><input class="qtd" type="number" min="0" step="any" value="${x.qa}" data-ed="${g.obra}|${x.op}|${x.cod}|qa" title="Quantidade apontada — edite se precisar corrigir"></td>
         <td class="num"><input class="qtd" type="number" min="0" step="any" value="${x.qp}" data-ed="${g.obra}|${x.op}|${x.cod}|qp" title="Quantidade paga — edite se precisar corrigir"></td>
         <td class="num">${nnum(x.dif)}</td><td class="num">${brl(Math.abs(x.vdif))}</td>
@@ -784,7 +791,7 @@ function desenharFicha(){
         <th class="num" data-k="qtd">Quantidade${seta("qtd")}</th>
         <th class="num" data-k="vlr">Valor${seta("vlr")}</th>
       </tr></thead><tbody>
-      ${g.map(x=>`<tr><td>${x.cod_mobra}</td><td>${badge(contratoDe(x.cod_mobra))}</td><td>${esc(x.cd_mao_de_obra_descricao)}</td><td class="num">${nnum(x.qtd)}</td><td class="num">${brl(x.vlr)}</td></tr>`).join("")}
+      ${g.map(x=>`<tr><td>${x.cod_mobra}</td><td>${badge(contratoDe(x.cod_mobra))}</td><td>${esc(x.cd_mao_de_obra_descricao)}${marcaLV(x.cd_mao_de_obra_descricao)}</td><td class="num">${nnum(x.qtd)}</td><td class="num">${brl(x.vlr)}</td></tr>`).join("")}
       </tbody><tfoot><tr><th colspan="3">Subtotal ${op==="I"?"instalado":"retirado"}</th><th class="num">${nnum(sq)}</th><th class="num">${brl(sv)}</th></tr></tfoot></table></div>`;
   };
   const seta=k=>fichaSort.k===k?(fichaSort.d>0?" \u25B2":" \u25BC"):"";
