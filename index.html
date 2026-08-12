@@ -1331,7 +1331,7 @@ for(let i=0;i<OBRAS.length;i++){
       if(cabObra && String(cabObra).trim()!==obra){
         console.warn("descartado: pesquisei",obra,"e a planilha veio da obra",String(cabObra).trim());
         res.obras[obra]={equipe:"",data:"",itens:[],naoConfirmada:true};
-        passo(i+1,`obra ${obra} — resultado não confere, descartado`);
+        passo(i+1,"obra "+obra+" — resultado não confere, descartado");
         continue;
       }
       reg.obraArquivo=cabObra?String(cabObra).trim():"";
