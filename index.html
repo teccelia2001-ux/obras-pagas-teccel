@@ -64,6 +64,13 @@ tr.obra:hover{background:var(--head)}
 .c-antigo{background:rgba(148,163,184,.16);color:var(--muted);border-color:var(--muted)}
 [data-tema="claro"] .c-novo{background:#f3e8ff;color:#7e22ce;border-color:#a855f7}
 [data-tema="claro"] .c-antigo{background:#eef2f7;color:#475569;border-color:#94a3b8}
+input.qtd{width:74px;text-align:right;padding:3px 6px;font-size:12.5px;border-radius:6px;background:transparent;border:1px solid transparent}
+input.qtd:hover{border-color:var(--line);background:var(--panel2)}
+input.qtd:focus{border-color:var(--accent);background:var(--panel);outline:none}
+input.qtd::-webkit-outer-spin-button,input.qtd::-webkit-inner-spin-button{opacity:.35}
+tr.editado td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.mkEd{color:var(--accent);margin-left:5px;font-size:11px}
+@media (max-width:700px){input.qtd{width:62px}}
 tr.inativo td{opacity:.45;text-decoration:line-through}
 tr.inativo td.acao{opacity:1;text-decoration:none}
 button.mini{padding:2px 8px;font-size:11px;border-radius:99px;background:var(--panel2);border-color:var(--line);color:var(--muted);font-weight:600}
@@ -284,6 +291,7 @@ html{-webkit-text-size-adjust:100%}
     <button id="csv">Exportar CSV</button>
     <button id="xlsx">⬇️ Baixar Excel filtrado</button>
     <button class="sec" id="btnInat" hidden></button>
+    <button class="sec" id="btnEdit" hidden></button>
     <button id="btnRel" hidden>📄 Gerar relatório</button>
   </div>
 
@@ -504,6 +512,32 @@ document.getElementById("tbl").tHead.addEventListener("click",e=>{
 /* ---------- confronto apontado (termômetro) x pago (medição) ---------- */
 const SIT_CLS={"Pendente de pagamento":"s-pend","Pagamento parcial":"s-parc","Pago a mais":"s-maior",
   "Pago sem apontamento":"s-sem","Conferido":"s-ok","Obra não encontrada no termômetro":"s-nao"};
+let EDICOES={};
+try{const e=localStorage.getItem("confronto-edicoes"); if(e) EDICOES=JSON.parse(e)}catch(e){}
+function salvarEdicoes(){try{localStorage.setItem("confronto-edicoes",JSON.stringify(EDICOES))}catch(e){}}
+/* valor unitário do serviço, tirado da medição (cai para o do termômetro se não houver) */
+function unitDe(op,cod){
+  for(const r of D) if(r.cod_mobra===cod&&r.tip_operacao===op&&r.qtd_mo_realizada)
+    return r.vlr_total_real/r.qtd_mo_realizada;
+  return 0;
+}
+function situacaoDe(qa,qp,original){
+  if(original==="Obra não encontrada no termômetro") return original;
+  if(qa>0&&qp===0) return "Pendente de pagamento";
+  if(qa>qp) return "Pagamento parcial";
+  if(qp>qa&&qa>0) return "Pago a mais";
+  if(qa===0&&qp>0) return "Pago sem apontamento";
+  return "Conferido";
+}
+function editarQtd(obra,op,cod,campo,valor){
+  const k=obra+"|"+op+"|"+cod;
+  const e=EDICOES[k]||(EDICOES[k]={});
+  const v=parseFloat(String(valor).replace(",","."));
+  if(isNaN(v)||v<0) return;
+  e[campo]=Math.round(v*100)/100;
+  salvarEdicoes(); desenharFichaConfronto(); render();
+}
+function limparEdicoes(){EDICOES={};salvarEdicoes()}
 let INATIVOS=new Set();
 try{const g=localStorage.getItem("confronto-inativos"); if(g) INATIVOS=new Set(JSON.parse(g))}catch(e){}
 const chaveInat=(obra,op,cod)=>obra+"|"+op+"|"+cod;
@@ -517,11 +551,23 @@ function confrontoPorObra(){
   const m=new Map();
   for(const r of CONFRONTO.linhas){
     /* itens inativos não somam nos totais */
-    const [obra,mun,op,cod,serv,qa,qp,dif,vdif,sit]=r;
+    let [obra,mun,op,cod,serv,qa,qp,dif,vdif,sit]=r;
     if(!m.has(obra)) m.set(obra,{obra,mun,apont:0,pago:0,pend:0,maior:0,sem:0,div:0,conf:0,inat:0,naoenc:false,itens:[]});
     const g=m.get(obra);
     const inativo=INATIVOS.has(chaveInat(obra,op,cod));
-    g.itens.push({op,cod,serv,qa,qp,dif,vdif,sit,inativo});
+    const ed=EDICOES[obra+"|"+op+"|"+cod];
+    let editado=false;
+    if(ed){
+      if(ed.qa!==undefined&&ed.qa!==qa){qa=ed.qa;editado=true}
+      if(ed.qp!==undefined&&ed.qp!==qp){qp=ed.qp;editado=true}
+      if(editado){
+        dif=Math.round((qa-qp)*100)/100;
+        const u=unitDe(op,cod) || (dif? Math.abs(vdif)/Math.abs(r[7]||1) : 0);
+        vdif=Math.round(dif*u*100)/100;
+        sit=situacaoDe(qa,qp,sit);
+      }
+    }
+    g.itens.push({op,cod,serv,qa,qp,dif,vdif,sit,inativo,editado});
     if(inativo){g.inat=(g.inat||0)+1; continue}
     if(sit==="Obra não encontrada no termômetro") g.naoenc=true;
     if(sit==="Pendente de pagamento"||sit==="Pagamento parcial"){g.pend+=vdif;g.div++}
@@ -606,8 +652,9 @@ function desenharFichaConfronto(){
         <th class="num" data-k="vdif">Valor${seta("vdif")}</th>
         <th></th>
       </tr></thead><tbody>
-      ${it.map(x=>`<tr class="${x.inativo?"inativo":""}"><td>${x.cod}</td><td class="${x.op==="I"?"op-i":"op-r"}">${x.op==="I"?"▲ Inst.":"▼ Retir."}</td><td>${esc(x.serv)}</td>
-        <td class="num">${nnum(x.qa)}</td><td class="num">${nnum(x.qp)}</td>
+      ${it.map(x=>`<tr class="${x.inativo?"inativo":""}${x.editado?" editado":""}"><td>${x.cod}${x.editado?'<span class="mkEd" title="Quantidade editada">✎</span>':""}</td><td class="${x.op==="I"?"op-i":"op-r"}">${x.op==="I"?"▲ Inst.":"▼ Retir."}</td><td>${esc(x.serv)}</td>
+        <td class="num"><input class="qtd" type="number" min="0" step="any" value="${x.qa}" data-ed="${g.obra}|${x.op}|${x.cod}|qa" title="Quantidade apontada — edite se precisar corrigir"></td>
+        <td class="num"><input class="qtd" type="number" min="0" step="any" value="${x.qp}" data-ed="${g.obra}|${x.op}|${x.cod}|qp" title="Quantidade paga — edite se precisar corrigir"></td>
         <td class="num">${nnum(x.dif)}</td><td class="num">${brl(Math.abs(x.vdif))}</td>
         <td class="acao"><button class="mini ${x.inativo?"reativar":""}" data-inat="${g.obra}|${x.op}|${x.cod}" title="${x.inativo?"Voltar a considerar este serviço":"Tirar este serviço da análise"}">${x.inativo?"Reativar":"Desativar"}</button></td></tr>`).join("")}
       </tbody><tfoot><tr><th colspan="5">${titulo} — total</th><th class="num"></th><th class="num">${brl(sv)}</th><th></th></tr></tfoot></table></div>`;
@@ -635,7 +682,7 @@ function desenharFichaConfronto(){
     ${bloco("Pago sem apontamento","sem","🔵",x=>x.sit==="Pago sem apontamento")}
     ${bloco("Serviços não encontrados no termômetro","nao","⚠️",x=>x.sit==="Obra não encontrada no termômetro")}
     ${bloco("Conferido (apontado = pago)","ok","✅",x=>x.sit==="Conferido")}
-    <div class="ftotal"><span>Pendente de pagamento nesta obra <span class="muted" style="font-size:12px;font-weight:500">· ${conferidos} serviços conferidos${g.inat?" · "+g.inat+" fora da análise":""}</span></span><b>${brl(g.pend)}</b></div>`;
+    <div class="ftotal"><span>Pendente de pagamento nesta obra <span class="muted" style="font-size:12px;font-weight:500">· ${conferidos} serviços conferidos${g.inat?" · "+g.inat+" fora da análise":""}${g.itens.filter(x=>x.editado).length?" · "+g.itens.filter(x=>x.editado).length+" com quantidade editada":""}</span></span><b>${brl(g.pend)}</b></div>`;
   document.querySelectorAll("#mbody .ftbl thead").forEach(t=>t.onclick=e=>{
     const k=e.target.closest("th")?.dataset.k; if(!k)return;
     fichaSort={k,d:fichaSort.k===k?-fichaSort.d:1}; desenharFichaConfronto();
@@ -644,13 +691,32 @@ function desenharFichaConfronto(){
     const b=e.target.closest("button[data-inat]"); if(!b)return;
     const [obra,op,cod]=b.dataset.inat.split("|"); alternarInativo(obra,op,cod);
   };
+  document.getElementById("mbody").addEventListener("change",e=>{
+    const i=e.target.closest("input[data-ed]"); if(!i)return;
+    const [obra,op,cod,campo]=i.dataset.ed.split("|");
+    editarQtd(obra,op,cod,campo,i.value);
+  });
+  document.getElementById("mbody").addEventListener("keydown",e=>{
+    const i=e.target.closest("input[data-ed]"); if(!i)return;
+    if(e.key==="Enter"){e.preventDefault(); i.blur()}
+  });
 }
 
 function atualizarBotaoInativos(conf){
   const b=document.getElementById("btnInat");
   b.hidden = !conf || INATIVOS.size===0;
   b.textContent = `↺ Reativar ${INATIVOS.size} serviço(s) fora da análise`;
+  const e=document.getElementById("btnEdit"), n=Object.keys(EDICOES).length;
+  e.hidden = !conf || n===0;
+  e.textContent = `↺ Desfazer ${n} quantidade(s) editada(s)`;
 }
+document.getElementById("btnEdit").onclick=()=>{
+  const n=Object.keys(EDICOES).length; if(!n) return;
+  if(!confirm(`Voltar às quantidades originais nos ${n} serviços editados?`)) return;
+  limparEdicoes();
+  if(fichaObra&&fichaTipo==="conf") desenharFichaConfronto();
+  render();
+};
 document.getElementById("btnInat").onclick=()=>{
   if(!INATIVOS.size) return;
   if(!confirm(`Voltar a considerar os ${INATIVOS.size} serviços que estão fora da análise?`)) return;
