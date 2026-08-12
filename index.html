@@ -96,6 +96,11 @@ td.op-r{color:var(--bad-txt);font-weight:700;white-space:nowrap}
 .scroll{max-height:65vh;overflow:auto;border-radius:10px;border:1px solid var(--line)}
 .muted{color:var(--muted)}
 .trunc{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-weight:400}
+#analisesmodal[hidden]{display:none}
+#analisesmodal{position:fixed;inset:0;background:rgba(2,6,23,.7);display:flex;align-items:flex-start;justify-content:center;padding:24px;z-index:70;overflow:auto}
+.itemAnalise{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.itemAnalise.atual{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+@media (max-width:700px){.itemAnalise{flex-direction:column;align-items:stretch}.itemAnalise button{width:100%}}
 #termomodal[hidden]{display:none}
 #termomodal{position:fixed;inset:0;background:rgba(2,6,23,.7);display:flex;align-items:flex-start;justify-content:center;padding:24px;z-index:60;overflow:auto}
 #termomodal ol li{margin-bottom:8px}
@@ -256,7 +261,7 @@ html{-webkit-text-size-adjust:100%}
     <button class="sec" id="btnOrig" hidden>Voltar à planilha original</button>
     <button id="btnTermo">🌡️ Analisar termômetro</button>
     <button class="sec" id="btnSalvar">💾 Salvar análise</button>
-    <button class="sec" id="btnRestaurar" hidden>↩️ Restaurar última análise</button>
+    <button class="sec" id="btnAnalises">📂 Minhas análises</button>
     <button class="sec perigo" id="btnLimpar">🗑️ Apagar dados</button>
     <input type="file" id="arq" accept=".xls,.xlsx,.xlsm,.csv" hidden>
   </div>
@@ -311,6 +316,18 @@ html{-webkit-text-size-adjust:100%}
   <div class="scroll"><table id="tbl"><thead></thead><tbody></tbody></table></div>
   <div class="pg"><span id="info"></span><button class="sec" id="mais">Mostrar mais</button></div>
   <p class="muted" style="font-size:12px">Dica: clique em qualquer linha de obra para abrir a ficha completa — vale também na aba de confronto.</p>
+  </div>
+</div>
+
+<div id="analisesmodal" hidden>
+  <div class="mbox" style="max-width:720px">
+    <div class="mtop"><strong id="analisesTitulo">Minhas análises</strong><span style="flex:1"></span>
+      <button class="sec" id="analisesFechar">Fechar ✕</button></div>
+    <div style="padding:16px">
+      <p id="analisesSub" class="muted" style="margin-top:0;font-size:12.5px" hidden>
+        Escolha uma análise salva para continuar de onde parou, ou feche esta janela para trabalhar com a medição original.</p>
+      <div id="listaAnalises" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
   </div>
 </div>
 
@@ -912,7 +929,6 @@ function processarPlanilha(aoa,nomeArq,extra){
   vista="obras"; sortKey=null; sortDir=1; limite=200;
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x.dataset.v==="obras"));
   render();
-  try{atualizarBotaoAnalise()}catch(e){}
   if(extra.original){ fonteEl.textContent=""; document.getElementById("btnOrig").hidden=true; }
   else { fonteEl.innerHTML=`✅ <b>${esc(nomeArq)}</b> — ${nnum(novos.length)} lançamentos carregados.`;
          document.getElementById("btnOrig").hidden=false; }
@@ -984,62 +1000,134 @@ function validarObra(obra){
   salvarValidadas();
   atualizarBotaoValidar(obra);
   if(fichaObra===obra&&fichaTipo==="conf") desenharFichaConfronto();
-  render(); salvarAnalise(true);
+  render();
+  if(ANALISE_ATUAL) gravarAnalise(ANALISE_ATUAL.id,ANALISE_ATUAL.nome,true);
 }
 
-/* ---------- salvar / restaurar a última análise ---------- */
-const CHAVE_ANALISE="ultima-analise";
-function salvarAnalise(silencioso){
-  const base={quando:new Date().toISOString(),
-    arquivo:(FONTE&&FONTE.nome)||"", aba:(FONTE&&FONTE.aba)||"", datas:(FONTE&&FONTE.datas)||[],
-    confronto:CONFRONTO, equipes:EQUIPES,
-    edicoes:EDICOES, inativos:[...INATIVOS], validadas:VALIDADAS};
-  const comPlanilha=Object.assign({},base,{aoa:(FONTE&&FONTE.aoa)||null});
-  const aviso=t=>{const el=document.getElementById("fonte"); if(el&&!silencioso) el.innerHTML=t};
-  try{
-    localStorage.setItem(CHAVE_ANALISE,JSON.stringify(comPlanilha));
-    aviso(`💾 Análise salva neste navegador em ${new Date().toLocaleString("pt-BR")}.`);
-    return true;
-  }catch(e){
-    try{
-      localStorage.setItem(CHAVE_ANALISE,JSON.stringify(base));
-      aviso("💾 Análise salva (sem a planilha completa — ela é grande demais para o navegador; o confronto foi preservado).");
-      return true;
-    }catch(e2){
-      aviso('<span style="color:var(--bad)">❌ Não foi possível salvar: espaço do navegador esgotado.</span>');
-      return false;
-    }
-  }
+/* ---------- análises salvas ---------- */
+const IDX="analises-index";
+let ANALISE_ATUAL=null;
+const lerIndice=()=>{try{return JSON.parse(localStorage.getItem(IDX)||"[]")}catch(e){return []}};
+const gravarIndice=l=>{try{localStorage.setItem(IDX,JSON.stringify(l))}catch(e){}};
+
+function resumoAtual(){
+  const G=(typeof confrontoPorObra==="function"&&CONFRONTO&&CONFRONTO.linhas.length)?confrontoPorObra():[];
+  return {obras:G.length, pendencia:G.reduce((a,g)=>a+g.pend,0),
+    validadas:G.filter(g=>VALIDADAS[g.obra]).length,
+    lancamentos:D.length};
 }
-function restaurarAnalise(automatico){
-  let a=null;
-  try{const t=localStorage.getItem(CHAVE_ANALISE); if(t) a=JSON.parse(t)}catch(e){}
-  if(!a) return false;
-  if(a.aoa&&a.aoa.length){
-    try{ processarPlanilha(a.aoa,a.arquivo||"análise salva",{datas:a.datas,aba:a.aba}); }catch(e){}
+function gravarAnalise(id,nome,silencioso){
+  const base={id,nome,quando:new Date().toISOString(),
+    arquivo:(FONTE&&FONTE.nome)||"", aba:(FONTE&&FONTE.aba)||"", datas:(FONTE&&FONTE.datas)||[],
+    confronto:CONFRONTO, equipes:EQUIPES, edicoes:EDICOES,
+    inativos:[...INATIVOS], validadas:VALIDADAS, resumo:resumoAtual()};
+  const aviso=t=>{const el=document.getElementById("fonte"); if(el&&!silencioso) el.innerHTML=t};
+  let completa=true;
+  try{ localStorage.setItem("analise:"+id, JSON.stringify(Object.assign({},base,{aoa:(FONTE&&FONTE.aoa)||null}))); }
+  catch(e){
+    completa=false;
+    try{ localStorage.setItem("analise:"+id, JSON.stringify(base)); }
+    catch(e2){ aviso('<span style="color:var(--bad)">❌ Sem espaço no navegador. Exclua uma análise antiga em “Minhas análises”.</span>'); return false }
   }
+  const l=lerIndice().filter(x=>x.id!==id);
+  l.unshift({id,nome,quando:base.quando,arquivo:base.arquivo,completa,resumo:base.resumo});
+  gravarIndice(l);
+  ANALISE_ATUAL={id,nome};
+  aviso(`💾 <b>${esc(nome)}</b> salva em ${new Date(base.quando).toLocaleString("pt-BR")}${completa?"":" (sem a planilha completa — grande demais para o navegador)"}.`);
+  atualizarBarraAnalise();
+  return true;
+}
+function abrirAnalise(id){
+  let a=null;
+  try{a=JSON.parse(localStorage.getItem("analise:"+id)||"null")}catch(e){}
+  if(!a){alert("Não encontrei essa análise.");return false}
+  if(a.aoa&&a.aoa.length){ try{ processarPlanilha(a.aoa,a.arquivo||a.nome,{datas:a.datas,aba:a.aba}) }catch(e){} }
   if(a.confronto) CONFRONTO=a.confronto;
   if(a.equipes) EQUIPES=a.equipes;
   EDICOES=a.edicoes||{}; salvarEdicoes();
   INATIVOS=new Set(a.inativos||[]); salvarInativos();
   VALIDADAS=a.validadas||{}; salvarValidadas();
+  ANALISE_ATUAL={id:a.id,nome:a.nome};
   const el=document.getElementById("fonte");
-  if(el) el.innerHTML=`💾 Última análise restaurada (salva em ${new Date(a.quando).toLocaleString("pt-BR")})`+
-    (a.aoa? ` — <b>${esc(a.arquivo||"planilha")}</b>.`:" — só o confronto; recarregue a planilha para as demais abas.");
+  if(el) el.innerHTML=`📂 <b>${esc(a.nome)}</b> — salva em ${new Date(a.quando).toLocaleString("pt-BR")}`+
+    (a.aoa? ` · ${esc(a.arquivo||"planilha")}`:" · só o confronto (recarregue a planilha para as demais abas)");
   document.getElementById("btnOrig").hidden=false;
+  atualizarBarraAnalise();
+  fecharAnalises();
+  vista="conf"; sortKey=null; sortDir=1; limite=200;
+  document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x.dataset.v==="conf"));
+  document.getElementById("fsitconf").hidden=false;
+  ["fsit","fmo","fcon"].forEach(id=>document.getElementById(id).hidden=true);
+  document.getElementById("xlsx").hidden=true; document.getElementById("btnRel").hidden=false;
+  document.getElementById("avisoConf").hidden=false;
   render();
   return true;
 }
-document.getElementById("btnSalvar").onclick=()=>{ if(salvarAnalise(false)) atualizarBotaoAnalise() };
-document.getElementById("btnRestaurar").onclick=()=>{
-  if(!restaurarAnalise(false)) alert("Não há análise salva neste navegador.");
+function excluirAnalise(id){
+  const l=lerIndice(), a=l.find(x=>x.id===id);
+  if(!a) return;
+  if(!confirm(`Excluir a análise “${a.nome}”? Isso não afeta as planilhas nem o termômetro.`)) return;
+  try{localStorage.removeItem("analise:"+id)}catch(e){}
+  gravarIndice(l.filter(x=>x.id!==id));
+  if(ANALISE_ATUAL&&ANALISE_ATUAL.id===id) ANALISE_ATUAL=null;
+  atualizarBarraAnalise(); listarAnalises();
+}
+function renomearAnalise(id){
+  const l=lerIndice(), a=l.find(x=>x.id===id); if(!a) return;
+  const nome=prompt("Novo nome da análise:",a.nome); if(!nome) return;
+  a.nome=nome.trim(); gravarIndice(l);
+  try{const o=JSON.parse(localStorage.getItem("analise:"+id)); o.nome=a.nome;
+    localStorage.setItem("analise:"+id,JSON.stringify(o))}catch(e){}
+  if(ANALISE_ATUAL&&ANALISE_ATUAL.id===id) ANALISE_ATUAL.nome=a.nome;
+  atualizarBarraAnalise(); listarAnalises();
+}
+function atualizarBarraAnalise(){
+  const b=document.getElementById("btnAnalises"), n=lerIndice().length;
+  b.textContent = ANALISE_ATUAL ? `📂 ${ANALISE_ATUAL.nome}` : (n?`📂 Minhas análises (${n})`:"📂 Minhas análises");
+  b.title = n? "Escolher, renomear ou excluir análises salvas" : "Nenhuma análise salva ainda";
+}
+function listarAnalises(){
+  const l=lerIndice(), el=document.getElementById("listaAnalises");
+  if(!l.length){el.innerHTML='<p class="muted" style="margin:0">Nenhuma análise salva ainda. Carregue uma medição, rode o confronto e clique em <b>Salvar análise</b>.</p>';return}
+  el.innerHTML=l.map(a=>`<div class="itemAnalise${ANALISE_ATUAL&&ANALISE_ATUAL.id===a.id?" atual":""}">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:700">${esc(a.nome)}${ANALISE_ATUAL&&ANALISE_ATUAL.id===a.id?' <span class="tag s-ok">aberta</span>':""}</div>
+      <div class="muted" style="font-size:12px">${new Date(a.quando).toLocaleString("pt-BR")}${a.arquivo?" · "+esc(a.arquivo):""}${a.completa?"":" · sem planilha"}</div>
+      <div class="muted" style="font-size:12px">${a.resumo?`${nnum(a.resumo.obras)} obras · ${brl(a.resumo.pendencia)} pendentes · ${a.resumo.validadas} validada(s)`:""}</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button data-abrir="${a.id}">Abrir</button>
+      <button class="sec" data-renomear="${a.id}">Renomear</button>
+      <button class="sec perigo" data-excluir="${a.id}">Excluir</button>
+    </div></div>`).join("");
+}
+function abrirAnalises(){document.getElementById("analisesmodal").hidden=false;listarAnalises()}
+function fecharAnalises(){document.getElementById("analisesmodal").hidden=true}
+document.getElementById("btnAnalises").onclick=abrirAnalises;
+document.getElementById("analisesFechar").onclick=fecharAnalises;
+document.getElementById("analisesmodal").addEventListener("click",e=>{if(e.target.id==="analisesmodal")fecharAnalises()});
+document.getElementById("listaAnalises").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b)return;
+  if(b.dataset.abrir) abrirAnalise(b.dataset.abrir);
+  else if(b.dataset.renomear) renomearAnalise(b.dataset.renomear);
+  else if(b.dataset.excluir) excluirAnalise(b.dataset.excluir);
+});
+document.getElementById("btnSalvar").onclick=()=>{
+  const sugerido = ANALISE_ATUAL ? ANALISE_ATUAL.nome
+    : ((FONTE&&FONTE.nome? FONTE.nome.replace(/\.(xls|xlsx|xlsm|csv)$/i,"") : "Análise")+" — "+new Date().toLocaleDateString("pt-BR"));
+  const nome=prompt("Nome desta análise (ex.: Medição 11.08 — novo contrato):",sugerido);
+  if(!nome) return;
+  const id = (ANALISE_ATUAL && ANALISE_ATUAL.nome===nome.trim()) ? ANALISE_ATUAL.id : "a"+Date.now().toString(36);
+  gravarAnalise(id,nome.trim(),false);
 };
-function atualizarBotaoAnalise(){
-  const b=document.getElementById("btnRestaurar");
-  let a=null; try{a=localStorage.getItem(CHAVE_ANALISE)}catch(e){}
-  b.hidden=!a;
-  if(a){ try{const o=JSON.parse(a);
-    b.title="Análise salva em "+new Date(o.quando).toLocaleString("pt-BR")}catch(e){} }
+/* ao abrir o link, oferecer a escolha quando houver análises salvas */
+function ofertaInicial(){
+  const l=lerIndice(); atualizarBarraAnalise();
+  if(!l.length) return;
+  const el=document.getElementById("listaAnalises");
+  document.getElementById("analisesTitulo").textContent="Escolha a análise para trabalhar";
+  document.getElementById("analisesSub").hidden=false;
+  abrirAnalises();
 }
 
 /* ---------- analisar termômetro: coleta assistida + recálculo do confronto ---------- */
@@ -1255,7 +1343,7 @@ document.getElementById("termoAplicar").onclick=()=>{
   const av=document.getElementById("avisoConf"); av.hidden=false;
   av.innerHTML=`⚖️ <b>Apontado</b> = termômetro de serviços (coletado em ${new Date(dados.gerado||Date.now()).toLocaleString("pt-BR")}) · <b>Pago</b> = medição carregada. `+
     `Abrange o <b>novo contrato</b> (códigos 6xxxx): ${r.obras} obras confrontadas${r.semApont?`, ${r.semApont} sem apontamento`:""}.`;
-  render(); salvarAnalise(true); atualizarBotaoAnalise();
+  render(); if(ANALISE_ATUAL) gravarAnalise(ANALISE_ATUAL.id,ANALISE_ATUAL.nome,true);
   el.innerHTML=`✅ Confronto refeito: <b>${nnum(r.obras)} obras</b> e <b>${nnum(r.linhas)} linhas</b>.`;
   setTimeout(()=>{document.getElementById("termomodal").hidden=true},1200);
 };
@@ -1534,7 +1622,7 @@ btnTema.onclick=()=>aplicarTema(document.documentElement.dataset.tema==="claro"?
 let tSalvo="escuro"; try{tSalvo=localStorage.getItem("tema-obras")||"escuro"}catch(e){}
 aplicarTema(tSalvo);
 carregarOriginal();
-atualizarBotaoAnalise();
+ofertaInicial();
 </script>
 </body>
 </html>
