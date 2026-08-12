@@ -740,13 +740,8 @@ function abrirFicha(num,tipo){
   document.getElementById("tituloFicha").textContent = fichaTipo==="conf" ? "Confronto da obra" : "Ficha da obra";
   document.getElementById("csvobra").textContent = fichaTipo==="conf" ? "CSV do confronto" : "CSV desta obra";
   document.getElementById("relobra").hidden = fichaTipo!=="conf";
-  const bv=document.getElementById("btnValidar");
-  bv.hidden = fichaTipo!=="conf";
-  if(fichaTipo==="conf"){
-    const v=VALIDADAS[num];
-    bv.textContent = v ? `✔️ Validada em ${v.em} — desfazer` : "✔️ Validar obra";
-    bv.className = v ? "sec" : "";
-  }
+  document.getElementById("btnValidar").hidden = fichaTipo!=="conf";
+  if(fichaTipo==="conf") atualizarBotaoValidar(num);
   (fichaTipo==="conf"?desenharFichaConfronto:desenharFicha)();
   document.getElementById("modal").hidden=false; document.body.style.overflow="hidden";
 }
@@ -977,10 +972,17 @@ document.getElementById("btnOrig").onclick=carregarOriginal;
 let VALIDADAS={};
 try{const v=localStorage.getItem("confronto-validadas"); if(v) VALIDADAS=JSON.parse(v)}catch(e){}
 function salvarValidadas(){try{localStorage.setItem("confronto-validadas",JSON.stringify(VALIDADAS))}catch(e){}}
+function atualizarBotaoValidar(obra){
+  const bv=document.getElementById("btnValidar"); if(!bv) return;
+  const v=VALIDADAS[obra];
+  bv.textContent = v ? `✔️ Validada em ${v.em} — desfazer` : "✔️ Validar obra";
+  bv.className = v ? "sec" : "";
+}
 function validarObra(obra){
   if(VALIDADAS[obra]) delete VALIDADAS[obra];
   else VALIDADAS[obra]={em:new Date().toLocaleString("pt-BR")};
   salvarValidadas();
+  atualizarBotaoValidar(obra);
   if(fichaObra===obra&&fichaTipo==="conf") desenharFichaConfronto();
   render(); salvarAnalise(true);
 }
