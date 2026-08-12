@@ -732,19 +732,20 @@ function desenharFichaConfronto(){
     const b=e.target.closest("button[data-inat]"); if(!b)return;
     const [obra,op,cod]=b.dataset.inat.split("|"); alternarInativo(obra,op,cod);
   };
-  document.getElementById("mbody").addEventListener("change",e=>{
+  /* atribuição (e não addEventListener) para não acumular ouvintes a cada redesenho */
+  document.getElementById("mbody").onchange=e=>{
     const i=e.target.closest("input[data-ed]"); if(!i)return;
     const [obra,op,cod,campo]=i.dataset.ed.split("|");
     editarQtd(obra,op,cod,campo,i.value);
-  },true);
+  };
+  document.getElementById("mbody").onkeydown=e=>{
+    const i=e.target.closest("input[data-ed]"); if(!i)return;
+    if(e.key==="Enter"){e.preventDefault(); i.blur()}
+  };
   if(chaveFoco){
     const alvo=document.querySelector(`#mbody input[data-ed="${chaveFoco}"]`);
     if(alvo){ alvo.focus(); const v=alvo.value; alvo.value=""; alvo.value=v; }
   }
-  document.getElementById("mbody").addEventListener("keydown",e=>{
-    const i=e.target.closest("input[data-ed]"); if(!i)return;
-    if(e.key==="Enter"){e.preventDefault(); i.blur()}
-  });
 }
 
 function atualizarBotaoInativos(conf){
