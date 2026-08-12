@@ -350,7 +350,7 @@ html{-webkit-text-size-adjust:100%}
       <p id="termoInfo" style="margin-top:0;font-size:13px"></p>
       <p class="muted" style="font-size:12.5px">O termômetro exige login, por isso a coleta roda dentro dele, por um favorito do navegador. Nada é alterado lá e <b>nenhum arquivo é baixado</b>: as planilhas geradas são lidas na memória e descartadas. A busca é limpa antes de cada obra e o número da obra é conferido dentro da planilha — obra que não confirmar entra como <b>não encontrada</b>, nunca com dados de outra.</p>
       <ol style="font-size:13px;padding-left:20px;line-height:1.7">
-        <li><b>Uma vez só:</b> <button id="termoMarcador">Copiar o coletor</button> e crie um favorito com ele —
+        <li><b>Uma vez só:</b> <button id="termoMarcador">Copiar o coletor</button> <button class="sec" id="termoMostrar">mostrar o endereço</button> e crie um favorito com ele —
           no Chrome, <b>Ctrl+Shift+O</b> → menu <b>⋮</b> → <b>Adicionar novo favorito</b> → cole no campo <b>URL</b>,
           dê o nome <i>Coletar termômetro</i> e salve. Deixe a barra de favoritos visível (<b>Ctrl+Shift+B</b>).</li>
         <li><button class="sec" id="termoAbrir">Abrir o termômetro</button> e, já logado, <b>clique no favorito</b>.
@@ -1390,6 +1390,12 @@ document.getElementById("btnTermo").onclick=abrirTermo;
 document.getElementById("termoFechar").onclick=()=>{document.getElementById("termomodal").hidden=true};
 document.getElementById("termomodal").addEventListener("click",e=>{if(e.target.id==="termomodal")document.getElementById("termomodal").hidden=true});
 document.getElementById("termoAbrir").onclick=()=>window.open(TERMO_URL,"_blank","noopener");
+document.getElementById("termoMostrar").onclick=()=>{
+  const t=document.getElementById("termoCola");
+  t.value="javascript:"+encodeURIComponent(scriptColeta().replace(/\/\*[\s\S]*?\*\//g,"").trim());
+  t.focus(); t.select();
+  document.getElementById("termoRes").innerHTML="O endereço está no campo abaixo, já selecionado — copie com <b>Ctrl+C</b> e cole na URL do favorito. São cerca de 12 mil caracteres; copie tudo.";
+};
 document.getElementById("termoMarcador").onclick=async()=>{
   const bm="javascript:"+encodeURIComponent(scriptColeta().replace(/\/\*[\s\S]*?\*\//g,"").trim());
   const el=document.getElementById("termoRes");
