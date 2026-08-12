@@ -69,9 +69,17 @@ input.qtd:hover{border-color:var(--line);background:var(--panel2)}
 input.qtd:focus{border-color:var(--accent);background:var(--panel);outline:none}
 input.qtd::-webkit-outer-spin-button,input.qtd::-webkit-inner-spin-button{opacity:.35}
 tr.editado td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.tagSusp{display:inline-block;padding:0 6px;border-radius:99px;font-size:10px;font-weight:800;white-space:nowrap;
+  background:rgba(245,158,11,.18);color:#f59e0b;border:1px solid #f59e0b}
+.avisoSusp{margin-top:8px;padding:9px 11px;border-left:3px solid #f59e0b;background:rgba(245,158,11,.12);
+  border-radius:8px;font-size:12.5px;line-height:1.5}
 .tagLV{display:inline-block;padding:0 6px;border-radius:99px;font-size:10px;font-weight:800;white-space:nowrap;
   background:rgba(250,204,21,.18);color:#facc15;border:1px solid #facc15;vertical-align:middle}
-[data-tema="claro"] .tagLV{background:#fef9c3;color:#a16207;border-color:#eab308}
+[data-tema="claro"] .tagSusp{display:inline-block;padding:0 6px;border-radius:99px;font-size:10px;font-weight:800;white-space:nowrap;
+  background:rgba(245,158,11,.18);color:#f59e0b;border:1px solid #f59e0b}
+.avisoSusp{margin-top:8px;padding:9px 11px;border-left:3px solid #f59e0b;background:rgba(245,158,11,.12);
+  border-radius:8px;font-size:12.5px;line-height:1.5}
+.tagLV{background:#fef9c3;color:#a16207;border-color:#eab308}
 .mkEd{color:var(--accent);margin-left:5px;font-size:11px}
 @media (max-width:700px){input.qtd{width:62px}}
 tr.inativo td{opacity:.45;text-decoration:line-through}
@@ -581,7 +589,26 @@ function alternarInativo(obra,op,cod){
   invalidarConfronto(); salvarInativos(); desenharFichaConfronto(); render();
 }
 let CONF_CACHE=null;
-function invalidarConfronto(){CONF_CACHE=null}
+function invalidarConfronto(){CONF_CACHE=null;SUSPEITAS=null}
+/* obras cujo apontado é idêntico ao de outra obra — sinal de coleta trocada */
+let SUSPEITAS=null;
+function obrasSuspeitas(){
+  if(SUSPEITAS) return SUSPEITAS;
+  const assin=new Map();
+  for(const l of CONFRONTO.linhas){
+    if(!(l[5]>0)) continue;
+    const a=assin.get(l[0])||[]; a.push(l[2]+l[3]+":"+l[5]); assin.set(l[0],a);
+  }
+  const porChave=new Map();
+  for(const [obra,itens] of assin){
+    if(itens.length<3) continue;
+    const k=itens.sort().join(",");
+    const g=porChave.get(k)||[]; g.push(obra); porChave.set(k,g);
+  }
+  SUSPEITAS=new Set();
+  for(const g of porChave.values()) if(g.length>1) g.forEach(o=>SUSPEITAS.add(o));
+  return SUSPEITAS;
+}
 function confrontoPorObra(){
   if(CONF_CACHE) return CONF_CACHE;
   const m=new Map();
@@ -648,9 +675,10 @@ function renderConfronto(){
              : g.div>0? `<span class="tag s-maior">Divergência sem pendência</span>`
              : `<span class="tag s-ok">Conferida</span>`;
     const temLV=g.itens.some(x=>ehLV(x.serv));
+    const susp=obrasSuspeitas().has(g.obra);
     return `<tr class="obra" data-c="${g.obra}"><td>${g.obra}${temLV?' <span class="tagLV">⚡ LV</span>':""}</td>
       <td class="trunc" title="${esc(desc)}">${esc(desc)||"—"}</td><td>${esc(g.mun)}</td>
-      <td>${(EQUIPES[g.obra]||{}).equipe? esc(EQUIPES[g.obra].equipe) : '<span class="muted">—</span>'}</td>
+      <td>${(EQUIPES[g.obra]||{}).equipe? esc(EQUIPES[g.obra].equipe) : '<span class="muted">—</span>'}${susp?' <span class="tagSusp" title="Apontamento idêntico ao de outra obra — confira no termômetro">⚠️ conferir</span>':""}</td>
       <td class="num">${g.div}</td><td class="num">${g.conf}</td><td class="num">${g.inat||"—"}</td>
       <td>${VALIDADAS[g.obra]?`<span class="tag s-ok">✔️ Validada</span>`:`<span class="tag s-parc">⏳ Pendente</span>`}</td>
       <td class="num">${g.pend?brl(g.pend):"—"}</td><td class="num">${g.maior?brl(g.maior):"—"}</td>
@@ -713,6 +741,7 @@ function desenharFichaConfronto(){
     <div class="fhead"><div>
       <div class="fnum">Obra ${num}</div>
       <div class="fdesc">${esc(m.desc||"")}${g.mun?" · "+esc(g.mun):""}</div>
+      ${obrasSuspeitas().has(num)?`<div class="avisoSusp">⚠️ <b>Coleta a conferir:</b> o apontamento desta obra é idêntico ao de outra obra, o que indica que a busca no termômetro devolveu o resultado errado. Confira no termômetro antes de usar estes números — inclusive a equipe.</div>`:""}
       ${(EQUIPES[num]||{}).equipe?`<div class="fdesc" style="margin-top:2px">👷 Equipe: <b>${esc(EQUIPES[num].equipe)}</b>${EQUIPES[num].data?` · última atualização no termômetro em ${esc(EQUIPES[num].data)}`:""}</div>`:""}
       <div style="margin-top:6px">${badge("novo")} <span class="tag ${g.naoenc?"s-nao":g.pend>0?"s-pend":g.div>0?"s-maior":"s-ok"}">${g.naoenc?"Não encontrada no termômetro":g.pend>0?"Pendente de pagamento":g.div>0?"Divergência sem pendência":"Conferida"}</span> ${VALIDADAS[num]?`<span class="tag s-ok">✔️ Validada em ${esc(VALIDADAS[num].em)}</span>`:`<span class="tag s-parc">⏳ Pendente de validação</span>`}</div>
     </div></div>
@@ -1297,6 +1326,15 @@ for(let i=0;i<OBRAS.length;i++){
     await ate(()=>cap.length>0, 6000);
     if(cap.length){
       const L=await lerZip(cap[cap.length-1]); let secao="";
+      /* confere o número da obra dentro da planilha: se vier outra, descarta */
+      const cabObra=(L.find(c=>c.A&&/^OBRA/i.test(String(c.A)))||{}).B;
+      if(cabObra && String(cabObra).trim()!==obra){
+        console.warn("descartado: pesquisei",obra,"e a planilha veio da obra",String(cabObra).trim());
+        res.obras[obra]={equipe:"",data:"",itens:[],naoConfirmada:true};
+        passo(i+1,`obra ${obra} — resultado não confere, descartado`);
+        continue;
+      }
+      reg.obraArquivo=cabObra?String(cabObra).trim():"";
       for(const c of L){
         if(c.A&&/INSTALAR|RETIRAR/i.test(c.A)&&!c.E) secao=/INSTALAR/i.test(c.A)?"I":"R";
         if(c.B&&/^\\d{4,5}$/.test(String(c.B).trim())&&c.E!==undefined)
