@@ -543,12 +543,17 @@ const SIT_CLS={"Pendente de pagamento":"s-pend","Pagamento parcial":"s-parc","Pa
 let EDICOES={};
 try{const e=localStorage.getItem("confronto-edicoes"); if(e) EDICOES=JSON.parse(e)}catch(e){}
 function salvarEdicoes(){try{localStorage.setItem("confronto-edicoes",JSON.stringify(EDICOES))}catch(e){}}
-/* valor unitário do serviço, tirado da medição (cai para o do termômetro se não houver) */
-function unitDe(op,cod){
-  for(const r of D) if(r.cod_mobra===cod&&r.tip_operacao===op&&r.qtd_mo_realizada)
-    return r.vlr_total_real/r.qtd_mo_realizada;
-  return 0;
+/* valor unitário do serviço, tirado da medição — calculado uma vez e guardado */
+let UNIT=null;
+function montarUnit(){
+  UNIT=new Map();
+  for(const r of D){
+    if(!r.qtd_mo_realizada) continue;
+    const k=r.tip_operacao+"|"+r.cod_mobra;
+    if(!UNIT.has(k)) UNIT.set(k, r.vlr_total_real/r.qtd_mo_realizada);
+  }
 }
+function unitDe(op,cod){ if(!UNIT) montarUnit(); return UNIT.get(op+"|"+cod)||0 }
 function situacaoDe(qa,qp,original){
   if(original==="Obra não encontrada no termômetro") return original;
   if(qa>0&&qp===0) return "Pendente de pagamento";
@@ -563,7 +568,7 @@ function editarQtd(obra,op,cod,campo,valor){
   const v=parseFloat(String(valor).replace(",","."));
   if(isNaN(v)||v<0) return;
   e[campo]=Math.round(v*100)/100;
-  salvarEdicoes(); desenharFichaConfronto(); render();
+  invalidarConfronto(); salvarEdicoes(); desenharFichaConfronto(); render();
 }
 function limparEdicoes(){EDICOES={};salvarEdicoes()}
 let INATIVOS=new Set();
@@ -573,9 +578,12 @@ function salvarInativos(){try{localStorage.setItem("confronto-inativos",JSON.str
 function alternarInativo(obra,op,cod){
   const k=chaveInat(obra,op,cod);
   INATIVOS.has(k)?INATIVOS.delete(k):INATIVOS.add(k);
-  salvarInativos(); desenharFichaConfronto(); render();
+  invalidarConfronto(); salvarInativos(); desenharFichaConfronto(); render();
 }
+let CONF_CACHE=null;
+function invalidarConfronto(){CONF_CACHE=null}
 function confrontoPorObra(){
+  if(CONF_CACHE) return CONF_CACHE;
   const m=new Map();
   for(const r of CONFRONTO.linhas){
     /* itens inativos não somam nos totais */
@@ -604,7 +612,8 @@ function confrontoPorObra(){
     else if(sit==="Conferido") g.conf++;
     g.apont+=qa; g.pago+=qp;
   }
-  return [...m.values()];
+  CONF_CACHE=[...m.values()];
+  return CONF_CACHE;
 }
 function renderConfronto(){
   const q=document.getElementById("q").value.trim().toLowerCase();
@@ -656,6 +665,7 @@ function renderConfronto(){
 
 /* ficha de confronto de uma obra — mesmo padrão da ficha da obra */
 function desenharFichaConfronto(){
+  const foco=document.activeElement, chaveFoco=(foco&&foco.dataset&&foco.dataset.ed)||null;
   const num=fichaObra, g=confrontoPorObra().find(x=>x.obra===num);
   if(!g){document.getElementById("mbody").innerHTML='<p class="muted">Obra sem dados de confronto.</p>';return}
   const m=META[num]||{};
@@ -726,7 +736,11 @@ function desenharFichaConfronto(){
     const i=e.target.closest("input[data-ed]"); if(!i)return;
     const [obra,op,cod,campo]=i.dataset.ed.split("|");
     editarQtd(obra,op,cod,campo,i.value);
-  });
+  },true);
+  if(chaveFoco){
+    const alvo=document.querySelector(`#mbody input[data-ed="${chaveFoco}"]`);
+    if(alvo){ alvo.focus(); const v=alvo.value; alvo.value=""; alvo.value=v; }
+  }
   document.getElementById("mbody").addEventListener("keydown",e=>{
     const i=e.target.closest("input[data-ed]"); if(!i)return;
     if(e.key==="Enter"){e.preventDefault(); i.blur()}
@@ -744,14 +758,14 @@ function atualizarBotaoInativos(conf){
 document.getElementById("btnEdit").onclick=()=>{
   const n=Object.keys(EDICOES).length; if(!n) return;
   if(!confirm(`Voltar às quantidades originais nos ${n} serviços editados?`)) return;
-  limparEdicoes();
+  limparEdicoes(); invalidarConfronto();
   if(fichaObra&&fichaTipo==="conf") desenharFichaConfronto();
   render();
 };
 document.getElementById("btnInat").onclick=()=>{
   if(!INATIVOS.size) return;
   if(!confirm(`Voltar a considerar os ${INATIVOS.size} serviços que estão fora da análise?`)) return;
-  INATIVOS.clear(); salvarInativos();
+  INATIVOS.clear(); salvarInativos(); invalidarConfronto();
   if(fichaObra&&fichaTipo==="conf") desenharFichaConfronto();
   render();
 };
@@ -929,7 +943,7 @@ function processarPlanilha(aoa,nomeArq,extra){
     if(!g.mun)  g.mun =txt(v(row,"descricao_municipio"));
   }
   if(!novos.length) throw new Error("Nenhuma linha com num_obra foi encontrada.");
-  D=novos; META=meta;
+  D=novos; META=meta; UNIT=null; invalidarConfronto();
   FONTE={aoa:aoa, datas:extra.datas||[], aba:extra.aba||"Planilha1", nome:nomeArq, original:!!extra.original};
   montarFiltros();
   ["q","fmun","fsit","fmo","fcon"].forEach(id=>document.getElementById(id).value="");
@@ -1004,7 +1018,7 @@ function atualizarBotaoValidar(obra){
 function validarObra(obra){
   if(VALIDADAS[obra]) delete VALIDADAS[obra];
   else VALIDADAS[obra]={em:new Date().toLocaleString("pt-BR")};
-  salvarValidadas();
+  salvarValidadas(); invalidarConfronto();
   atualizarBotaoValidar(obra);
   if(fichaObra===obra&&fichaTipo==="conf") desenharFichaConfronto();
   render();
@@ -1052,7 +1066,7 @@ function abrirAnalise(id){
   if(a.confronto) CONFRONTO=a.confronto;
   if(a.equipes) EQUIPES=a.equipes;
   EDICOES=a.edicoes||{}; salvarEdicoes();
-  INATIVOS=new Set(a.inativos||[]); salvarInativos();
+  INATIVOS=new Set(a.inativos||[]); salvarInativos(); invalidarConfronto(); UNIT=null;
   VALIDADAS=a.validadas||{}; salvarValidadas();
   ANALISE_ATUAL={id:a.id,nome:a.nome};
   const el=document.getElementById("fonte");
@@ -1184,7 +1198,7 @@ function calcularConfronto(apont){
   linhas.sort((a,b)=> a[0]===b[0] ? String(a[4]).localeCompare(String(b[4]),"pt-BR") : a[0].localeCompare(b[0]));
   CONFRONTO={linhas,naoencontradas:[...semApont].sort()};
   EQUIPES=equipes;
-  INATIVOS.clear(); salvarInativos();
+  INATIVOS.clear(); salvarInativos(); invalidarConfronto(); UNIT=null;
   return {linhas:linhas.length,obras:new Set(linhas.map(l=>l[0])).size,semApont:semApont.size};
 }
 
