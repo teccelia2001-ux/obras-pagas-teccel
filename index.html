@@ -348,7 +348,7 @@ html{-webkit-text-size-adjust:100%}
       <button class="sec" id="termoFechar">Fechar ✕</button></div>
     <div style="padding:16px">
       <p id="termoInfo" style="margin-top:0;font-size:13px"></p>
-      <p class="muted" style="font-size:12.5px">O termômetro exige login, por isso a coleta roda dentro dele, por um favorito do navegador. Nada é alterado lá e <b>nenhum arquivo é baixado</b>: as planilhas geradas são lidas na memória e descartadas.</p>
+      <p class="muted" style="font-size:12.5px">O termômetro exige login, por isso a coleta roda dentro dele, por um favorito do navegador. Nada é alterado lá e <b>nenhum arquivo é baixado</b>: as planilhas geradas são lidas na memória e descartadas. A busca é limpa antes de cada obra e o número da obra é conferido dentro da planilha — obra que não confirmar entra como <b>não encontrada</b>, nunca com dados de outra.</p>
       <ol style="font-size:13px;padding-left:20px;line-height:1.7">
         <li><b>Uma vez só:</b> <button id="termoMarcador">Copiar o coletor</button> e crie um favorito com ele —
           no Chrome, <b>Ctrl+Shift+O</b> → menu <b>⋮</b> → <b>Adicionar novo favorito</b> → cole no campo <b>URL</b>,
@@ -1313,13 +1313,23 @@ for(let i=0;i<OBRAS.length;i++){
   const obra=OBRAS[i];
   passo(i,\`obra \${obra} — \${i+1} de \${OBRAS.length}\`);
   cap.length=0;
-  const antes=equipeNaTela();
-  setVal(inp(),obra); await espera(120); btnBuscar().click();
-  await ate(()=>equipeNaTela()!==antes || !!btnPlan(), 5000);
+  /* limpa a busca antes de cada obra: sem isso o resultado anterior fica na tela
+     e a obra seguinte herdaria equipe e serviços de outra */
+  setVal(inp(),"ZZZZZZZZZZ"); await espera(120); btnBuscar().click();
+  await ate(()=>!equipeNaTela(), 4000);
+  if(equipeNaTela()){ await espera(600) }
+  if(equipeNaTela()){
+    console.warn(obra,"— não consegui limpar a busca; pulando para não misturar dados");
+    res.obras[obra]={equipe:"",data:"",itens:[],naoConfirmada:true};
+    passo(i+1,"obra "+obra+" — não confirmada");
+    continue;
+  }
+  setVal(inp(),obra); await espera(150); btnBuscar().click();
+  await ate(()=>!!equipeNaTela(), 5000);
   await espera(200);
   const eq=equipeNaTela(), achou=!!eq;
   const linhas=topo();
-  const reg={equipe:achou?eq:"",data:achou?(linhas[4]||""):"",itens:[]};
+  const reg={equipe:achou?eq:"",data:achou?(linhas[4]||""):"",itens:[],naoConfirmada:!achou};
   const bp=btnPlan();
   if(achou&&bp){
     bp.click();
@@ -1345,7 +1355,7 @@ for(let i=0;i<OBRAS.length;i++){
     }
   }
   res.obras[obra]=reg;
-  console.log(obra, reg.equipe||"(nao encontrada)", reg.itens.length+" itens");
+  console.log(obra, reg.equipe||"(nao encontrada no termometro)", reg.itens.length+" itens");
 }
 restaurar();
 const seg=Math.round((Date.now()-t0)/1000);
