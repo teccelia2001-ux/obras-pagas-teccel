@@ -255,6 +255,8 @@ html{-webkit-text-size-adjust:100%}
     <button id="btnArq">Escolher arquivo</button>
     <button class="sec" id="btnOrig" hidden>Voltar à planilha original</button>
     <button id="btnTermo">🌡️ Analisar termômetro</button>
+    <button class="sec" id="btnSalvar">💾 Salvar análise</button>
+    <button class="sec" id="btnRestaurar" hidden>↩️ Restaurar última análise</button>
     <button class="sec perigo" id="btnLimpar">🗑️ Apagar dados</button>
     <input type="file" id="arq" accept=".xls,.xlsx,.xlsm,.csv" hidden>
   </div>
@@ -286,6 +288,8 @@ html{-webkit-text-size-adjust:100%}
       <option value="sem">Com pago sem apontamento</option>
       <option value="nao">Não encontradas no termômetro</option>
       <option value="ok">Conferidas (sem divergência)</option>
+      <option value="pendval">⏳ Pendentes de validação</option>
+      <option value="val">✔️ Já validadas</option>
     </select>
     <button class="sec" id="limpar">Limpar</button>
     <button id="csv">Exportar CSV</button>
@@ -368,6 +372,7 @@ html{-webkit-text-size-adjust:100%}
     <div class="mtop">
       <strong id="tituloFicha">Ficha da obra</strong>
       <span style="flex:1"></span>
+      <button id="btnValidar" hidden></button>
       <button class="sec" id="relobra" hidden>📄 Relatório desta obra</button>
       <button class="sec" id="csvobra">CSV desta obra</button>
       <button class="sec" id="imprimir">Imprimir</button>
@@ -585,7 +590,7 @@ function renderConfronto(){
   let G=confrontoPorObra().filter(g=>
     (!mun||g.mun===mun)&&(!q||(g.obra+" "+g.mun).toLowerCase().includes(q))&&
     (!fs || (fs==="pend"? g.pend>0 : fs==="maior"? g.maior>0 : fs==="sem"? g.sem>0 :
-             fs==="nao"? g.naoenc : fs==="ok"? (g.div===0&&!g.naoenc) : true)));
+             fs==="nao"? g.naoenc : fs==="ok"? (g.div===0&&!g.naoenc) : fs==="pendval"? !VALIDADAS[g.obra] : fs==="val"? !!VALIDADAS[g.obra] : true)));
   G.sort((a,b)=> sortKey==="pend" ? (a.pend-b.pend)*sortDir : (b.pend-a.pend)||(b.maior+b.sem-a.maior-a.sem));
 
   const soma=k=>G.reduce((a,g)=>a+g[k],0);
@@ -595,12 +600,13 @@ function renderConfronto(){
     ["Obras com pendência",nnum(G.filter(g=>g.pend>0).length),""],
     ["Pago a mais",brl(soma("maior")),""],
     ["Pago sem apontamento",brl(soma("sem")),""],
+    ["Pendentes de validação",nnum(G.filter(g=>!VALIDADAS[g.obra]).length),""],
     ["Obras não encontradas",nnum(G.filter(g=>g.naoenc).length),""]
   ].map(([l,v,c])=>`<div class="card ${c}"><div class="lbl">${l}</div><div class="val">${v}</div></div>`).join("");
 
   const t=document.getElementById("tbl");
   t.tHead.innerHTML=`<tr><th>Nº da obra</th><th>Descrição da obra</th><th>Município</th><th>Equipe (termômetro)</th>
-    <th class="num">Divergências</th><th class="num">Conferidos</th><th class="num">Fora da análise</th>
+    <th class="num">Divergências</th><th class="num">Conferidos</th><th class="num">Fora da análise</th><th>Validação</th>
     <th class="num" data-k="pend">Pendente de pagamento${sortKey==="pend"?(sortDir>0?" ▲":" ▼"):""}</th>
     <th class="num">Pago a mais</th><th class="num">Sem apontamento</th><th>Situação</th></tr>`;
   t.tBodies[0].innerHTML=G.slice(0,limite).map(g=>{
@@ -613,9 +619,10 @@ function renderConfronto(){
       <td class="trunc" title="${esc(desc)}">${esc(desc)||"—"}</td><td>${esc(g.mun)}</td>
       <td>${(EQUIPES[g.obra]||{}).equipe? esc(EQUIPES[g.obra].equipe) : '<span class="muted">—</span>'}</td>
       <td class="num">${g.div}</td><td class="num">${g.conf}</td><td class="num">${g.inat||"—"}</td>
+      <td>${VALIDADAS[g.obra]?`<span class="tag s-ok">✔️ Validada</span>`:`<span class="tag s-parc">⏳ Pendente</span>`}</td>
       <td class="num">${g.pend?brl(g.pend):"—"}</td><td class="num">${g.maior?brl(g.maior):"—"}</td>
       <td class="num">${g.sem?brl(g.sem):"—"}</td><td>${et}</td></tr>`}).join("")
-    ||`<tr><td colspan="11" class="muted" style="padding:20px">Nenhuma obra no filtro atual.</td></tr>`;
+    ||`<tr><td colspan="12" class="muted" style="padding:20px">Nenhuma obra no filtro atual.</td></tr>`;
   document.getElementById("info").textContent=`Exibindo ${Math.min(limite,G.length)} de ${nnum(G.length)} obras`;
   document.getElementById("mais").hidden=G.length<=limite;
   atualizarBotaoInativos(true);
@@ -673,7 +680,7 @@ function desenharFichaConfronto(){
       <div class="fnum">Obra ${num}</div>
       <div class="fdesc">${esc(m.desc||"")}${g.mun?" · "+esc(g.mun):""}</div>
       ${(EQUIPES[num]||{}).equipe?`<div class="fdesc" style="margin-top:2px">👷 Equipe: <b>${esc(EQUIPES[num].equipe)}</b>${EQUIPES[num].data?` · última atualização no termômetro em ${esc(EQUIPES[num].data)}`:""}</div>`:""}
-      <div style="margin-top:6px">${badge("novo")} <span class="tag ${g.naoenc?"s-nao":g.pend>0?"s-pend":g.div>0?"s-maior":"s-ok"}">${g.naoenc?"Não encontrada no termômetro":g.pend>0?"Pendente de pagamento":g.div>0?"Divergência sem pendência":"Conferida"}</span></div>
+      <div style="margin-top:6px">${badge("novo")} <span class="tag ${g.naoenc?"s-nao":g.pend>0?"s-pend":g.div>0?"s-maior":"s-ok"}">${g.naoenc?"Não encontrada no termômetro":g.pend>0?"Pendente de pagamento":g.div>0?"Divergência sem pendência":"Conferida"}</span> ${VALIDADAS[num]?`<span class="tag s-ok">✔️ Validada em ${esc(VALIDADAS[num].em)}</span>`:`<span class="tag s-parc">⏳ Pendente de validação</span>`}</div>
     </div></div>
     ${naoenc}
     ${bloco("Pendente de pagamento","pend","🔴",x=>x.sit==="Pendente de pagamento")}
@@ -733,6 +740,13 @@ function abrirFicha(num,tipo){
   document.getElementById("tituloFicha").textContent = fichaTipo==="conf" ? "Confronto da obra" : "Ficha da obra";
   document.getElementById("csvobra").textContent = fichaTipo==="conf" ? "CSV do confronto" : "CSV desta obra";
   document.getElementById("relobra").hidden = fichaTipo!=="conf";
+  const bv=document.getElementById("btnValidar");
+  bv.hidden = fichaTipo!=="conf";
+  if(fichaTipo==="conf"){
+    const v=VALIDADAS[num];
+    bv.textContent = v ? `✔️ Validada em ${v.em} — desfazer` : "✔️ Validar obra";
+    bv.className = v ? "sec" : "";
+  }
   (fichaTipo==="conf"?desenharFichaConfronto:desenharFicha)();
   document.getElementById("modal").hidden=false; document.body.style.overflow="hidden";
 }
@@ -784,6 +798,7 @@ document.getElementById("modal").addEventListener("click",e=>{if(e.target.id==="
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&fichaObra)fecharFicha()});
 document.getElementById("imprimir").onclick=()=>window.print();
 document.getElementById("relobra").onclick=()=>abrirRelatorio(fichaObra);
+document.getElementById("btnValidar").onclick=()=>validarObra(fichaObra);
 document.getElementById("csvobra").onclick=()=>{
   if(fichaTipo==="conf"){
     const g=confrontoPorObra().find(x=>x.obra===fichaObra); if(!g)return;
@@ -902,6 +917,7 @@ function processarPlanilha(aoa,nomeArq,extra){
   vista="obras"; sortKey=null; sortDir=1; limite=200;
   document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x.dataset.v==="obras"));
   render();
+  try{atualizarBotaoAnalise()}catch(e){}
   if(extra.original){ fonteEl.textContent=""; document.getElementById("btnOrig").hidden=true; }
   else { fonteEl.innerHTML=`✅ <b>${esc(nomeArq)}</b> — ${nnum(novos.length)} lançamentos carregados.`;
          document.getElementById("btnOrig").hidden=false; }
@@ -956,6 +972,73 @@ function carregarOriginal(){
     {datas:PLANILHA.datas, aba:PLANILHA.aba, original:true});
 }
 document.getElementById("btnOrig").onclick=carregarOriginal;
+
+/* ---------- validação das obras ---------- */
+let VALIDADAS={};
+try{const v=localStorage.getItem("confronto-validadas"); if(v) VALIDADAS=JSON.parse(v)}catch(e){}
+function salvarValidadas(){try{localStorage.setItem("confronto-validadas",JSON.stringify(VALIDADAS))}catch(e){}}
+function validarObra(obra){
+  if(VALIDADAS[obra]) delete VALIDADAS[obra];
+  else VALIDADAS[obra]={em:new Date().toLocaleString("pt-BR")};
+  salvarValidadas();
+  if(fichaObra===obra&&fichaTipo==="conf") desenharFichaConfronto();
+  render(); salvarAnalise(true);
+}
+
+/* ---------- salvar / restaurar a última análise ---------- */
+const CHAVE_ANALISE="ultima-analise";
+function salvarAnalise(silencioso){
+  const base={quando:new Date().toISOString(),
+    arquivo:(FONTE&&FONTE.nome)||"", aba:(FONTE&&FONTE.aba)||"", datas:(FONTE&&FONTE.datas)||[],
+    confronto:CONFRONTO, equipes:EQUIPES,
+    edicoes:EDICOES, inativos:[...INATIVOS], validadas:VALIDADAS};
+  const comPlanilha=Object.assign({},base,{aoa:(FONTE&&FONTE.aoa)||null});
+  const aviso=t=>{const el=document.getElementById("fonte"); if(el&&!silencioso) el.innerHTML=t};
+  try{
+    localStorage.setItem(CHAVE_ANALISE,JSON.stringify(comPlanilha));
+    aviso(`💾 Análise salva neste navegador em ${new Date().toLocaleString("pt-BR")}.`);
+    return true;
+  }catch(e){
+    try{
+      localStorage.setItem(CHAVE_ANALISE,JSON.stringify(base));
+      aviso("💾 Análise salva (sem a planilha completa — ela é grande demais para o navegador; o confronto foi preservado).");
+      return true;
+    }catch(e2){
+      aviso('<span style="color:var(--bad)">❌ Não foi possível salvar: espaço do navegador esgotado.</span>');
+      return false;
+    }
+  }
+}
+function restaurarAnalise(automatico){
+  let a=null;
+  try{const t=localStorage.getItem(CHAVE_ANALISE); if(t) a=JSON.parse(t)}catch(e){}
+  if(!a) return false;
+  if(a.aoa&&a.aoa.length){
+    try{ processarPlanilha(a.aoa,a.arquivo||"análise salva",{datas:a.datas,aba:a.aba}); }catch(e){}
+  }
+  if(a.confronto) CONFRONTO=a.confronto;
+  if(a.equipes) EQUIPES=a.equipes;
+  EDICOES=a.edicoes||{}; salvarEdicoes();
+  INATIVOS=new Set(a.inativos||[]); salvarInativos();
+  VALIDADAS=a.validadas||{}; salvarValidadas();
+  const el=document.getElementById("fonte");
+  if(el) el.innerHTML=`💾 Última análise restaurada (salva em ${new Date(a.quando).toLocaleString("pt-BR")})`+
+    (a.aoa? ` — <b>${esc(a.arquivo||"planilha")}</b>.`:" — só o confronto; recarregue a planilha para as demais abas.");
+  document.getElementById("btnOrig").hidden=false;
+  render();
+  return true;
+}
+document.getElementById("btnSalvar").onclick=()=>{ if(salvarAnalise(false)) atualizarBotaoAnalise() };
+document.getElementById("btnRestaurar").onclick=()=>{
+  if(!restaurarAnalise(false)) alert("Não há análise salva neste navegador.");
+};
+function atualizarBotaoAnalise(){
+  const b=document.getElementById("btnRestaurar");
+  let a=null; try{a=localStorage.getItem(CHAVE_ANALISE)}catch(e){}
+  b.hidden=!a;
+  if(a){ try{const o=JSON.parse(a);
+    b.title="Análise salva em "+new Date(o.quando).toLocaleString("pt-BR")}catch(e){} }
+}
 
 /* ---------- analisar termômetro: coleta assistida + recálculo do confronto ---------- */
 const TERMO_URL="https://termometro-teccel-v2.vercel.app/administrativo";
@@ -1170,7 +1253,7 @@ document.getElementById("termoAplicar").onclick=()=>{
   const av=document.getElementById("avisoConf"); av.hidden=false;
   av.innerHTML=`⚖️ <b>Apontado</b> = termômetro de serviços (coletado em ${new Date(dados.gerado||Date.now()).toLocaleString("pt-BR")}) · <b>Pago</b> = medição carregada. `+
     `Abrange o <b>novo contrato</b> (códigos 6xxxx): ${r.obras} obras confrontadas${r.semApont?`, ${r.semApont} sem apontamento`:""}.`;
-  render();
+  render(); salvarAnalise(true); atualizarBotaoAnalise();
   el.innerHTML=`✅ Confronto refeito: <b>${nnum(r.obras)} obras</b> e <b>${nnum(r.linhas)} linhas</b>.`;
   setTimeout(()=>{document.getElementById("termomodal").hidden=true},1200);
 };
@@ -1198,7 +1281,7 @@ function relDados(){
   const obras=confrontoPorObra().filter(g=> relObra ? g.obra===relObra :
     (!mun||g.mun===mun)&&(!q||(g.obra+" "+g.mun).toLowerCase().includes(q))&&
     (!fs || (fs==="pend"? g.pend>0 : fs==="maior"? g.maior>0 : fs==="sem"? g.sem>0 :
-             fs==="nao"? g.naoenc : fs==="ok"? (g.div===0&&!g.naoenc) : true)));
+             fs==="nao"? g.naoenc : fs==="ok"? (g.div===0&&!g.naoenc) : fs==="pendval"? !VALIDADAS[g.obra] : fs==="val"? !!VALIDADAS[g.obra] : true)));
   const out=[];
   for(const g of obras){
     const itens=g.itens.filter(x=>!x.inativo&&sits.includes(x.sit));
@@ -1449,6 +1532,7 @@ btnTema.onclick=()=>aplicarTema(document.documentElement.dataset.tema==="claro"?
 let tSalvo="escuro"; try{tSalvo=localStorage.getItem("tema-obras")||"escuro"}catch(e){}
 aplicarTema(tSalvo);
 carregarOriginal();
+atualizarBotaoAnalise();
 </script>
 </body>
 </html>
