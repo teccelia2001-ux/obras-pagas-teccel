@@ -467,7 +467,7 @@ function agrupar(rows,keys,extra){
   return [...m.values()];
 }
 /* Linha Viva: serviços com LV ou "LINHA VIVA" na descrição */
-const ehLV=t=>new RegExp("(^|[^A-Z])LV([^A-Z]|$)|LINHA\s*VIVA","i").test(String(t||""));
+const ehLV=t=>new RegExp("(^|[^A-Z])LV([^A-Z]|$)|LINHA *VIVA","i").test(String(t||""));
 const marcaLV=t=>ehLV(t)?' <span class="tagLV" title="Serviço de Linha Viva">⚡ LV</span>':"";
 const tag=s=>`<span class="tag t-${(s||"").charAt(0)||"X"}">${s||"—"}</span>`;
 /* Contrato pelo código de mão de obra: 5 dígitos iniciando em 6 = novo; demais (4 dígitos, ex. 1xxx) = antigo */
