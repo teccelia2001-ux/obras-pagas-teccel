@@ -69,13 +69,21 @@ input.qtd:hover{border-color:var(--line);background:var(--panel2)}
 input.qtd:focus{border-color:var(--accent);background:var(--panel);outline:none}
 input.qtd::-webkit-outer-spin-button,input.qtd::-webkit-inner-spin-button{opacity:.35}
 tr.editado td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.s-cob{background:rgba(234,179,8,.18);color:#eab308;border-color:#eab308}
+[data-tema="claro"] .s-cob{background:#fef9c3;color:#a16207;border-color:#eab308}
+button.cobrar{background:#ca8a04;border-color:#ca8a04}
+.card.cob{border-color:#eab308} .card.cob .val{color:#eab308}
 .tagSusp{display:inline-block;padding:0 6px;border-radius:99px;font-size:10px;font-weight:800;white-space:nowrap;
   background:rgba(245,158,11,.18);color:#f59e0b;border:1px solid #f59e0b}
 .avisoSusp{margin-top:8px;padding:9px 11px;border-left:3px solid #f59e0b;background:rgba(245,158,11,.12);
   border-radius:8px;font-size:12.5px;line-height:1.5}
 .tagLV{display:inline-block;padding:0 6px;border-radius:99px;font-size:10px;font-weight:800;white-space:nowrap;
   background:rgba(250,204,21,.18);color:#facc15;border:1px solid #facc15;vertical-align:middle}
-[data-tema="claro"] .tagSusp{display:inline-block;padding:0 6px;border-radius:99px;font-size:10px;font-weight:800;white-space:nowrap;
+[data-tema="claro"] .s-cob{background:rgba(234,179,8,.18);color:#eab308;border-color:#eab308}
+[data-tema="claro"] .s-cob{background:#fef9c3;color:#a16207;border-color:#eab308}
+button.cobrar{background:#ca8a04;border-color:#ca8a04}
+.card.cob{border-color:#eab308} .card.cob .val{color:#eab308}
+.tagSusp{display:inline-block;padding:0 6px;border-radius:99px;font-size:10px;font-weight:800;white-space:nowrap;
   background:rgba(245,158,11,.18);color:#f59e0b;border:1px solid #f59e0b}
 .avisoSusp{margin-top:8px;padding:9px 11px;border-left:3px solid #f59e0b;background:rgba(245,158,11,.12);
   border-radius:8px;font-size:12.5px;line-height:1.5}
@@ -306,6 +314,7 @@ html{-webkit-text-size-adjust:100%}
       <option value="ok">Conferidas (sem divergência)</option>
       <option value="pendval">⏳ Pendentes de validação</option>
       <option value="val">✔️ Já validadas</option>
+      <option value="cobrar">💰 Marcadas para cobrança</option>
     </select>
     <button class="sec" id="limpar">Limpar</button>
     <button id="csv">Exportar CSV</button>
@@ -401,6 +410,7 @@ html{-webkit-text-size-adjust:100%}
       <strong id="tituloFicha">Ficha da obra</strong>
       <span style="flex:1"></span>
       <button id="btnValidar" hidden></button>
+      <button id="btnCobrar" hidden></button>
       <button class="sec" id="relobra" hidden>📄 Relatório desta obra</button>
       <button class="sec" id="csvobra">CSV desta obra</button>
       <button class="sec" id="imprimir">Imprimir</button>
@@ -649,7 +659,7 @@ function renderConfronto(){
   let G=confrontoPorObra().filter(g=>
     (!mun||g.mun===mun)&&(!q||(g.obra+" "+g.mun).toLowerCase().includes(q))&&
     (!fs || (fs==="pend"? g.pend>0 : fs==="maior"? g.maior>0 : fs==="sem"? g.sem>0 :
-             fs==="nao"? g.naoenc : fs==="ok"? (g.div===0&&!g.naoenc) : fs==="pendval"? !VALIDADAS[g.obra] : fs==="val"? !!VALIDADAS[g.obra] : true)));
+             fs==="nao"? g.naoenc : fs==="ok"? (g.div===0&&!g.naoenc) : fs==="pendval"? !VALIDADAS[g.obra] : fs==="val"? !!VALIDADAS[g.obra] : fs==="cobrar"? !!COBRANCAS[g.obra] : true)));
   G.sort((a,b)=> sortKey==="pend" ? (a.pend-b.pend)*sortDir : (b.pend-a.pend)||(b.maior+b.sem-a.maior-a.sem));
 
   const soma=k=>G.reduce((a,g)=>a+g[k],0);
@@ -660,12 +670,13 @@ function renderConfronto(){
     ["Pago a mais",brl(soma("maior")),""],
     ["Pago sem apontamento",brl(soma("sem")),""],
     ["Pendentes de validação",nnum(G.filter(g=>!VALIDADAS[g.obra]).length),""],
+    ["💰 A cobrar",brl(G.filter(g=>COBRANCAS[g.obra]).reduce((a,g)=>a+g.pend,0)),"cob"],
     ["Obras não encontradas",nnum(G.filter(g=>g.naoenc).length),""]
   ].map(([l,v,c])=>`<div class="card ${c}"><div class="lbl">${l}</div><div class="val">${v}</div></div>`).join("");
 
   const t=document.getElementById("tbl");
   t.tHead.innerHTML=`<tr><th>Nº da obra</th><th>Descrição da obra</th><th>Município</th><th>Equipe (termômetro)</th>
-    <th class="num">Divergências</th><th class="num">Conferidos</th><th class="num">Fora da análise</th><th>Validação</th>
+    <th class="num">Divergências</th><th class="num">Conferidos</th><th class="num">Fora da análise</th><th>Validação</th><th>Cobrança</th>
     <th class="num" data-k="pend">Pendente de pagamento${sortKey==="pend"?(sortDir>0?" ▲":" ▼"):""}</th>
     <th class="num">Pago a mais</th><th class="num">Sem apontamento</th><th>Situação</th></tr>`;
   t.tBodies[0].innerHTML=G.slice(0,limite).map(g=>{
@@ -681,9 +692,10 @@ function renderConfronto(){
       <td>${(EQUIPES[g.obra]||{}).equipe? esc(EQUIPES[g.obra].equipe) : '<span class="muted">—</span>'}${susp?' <span class="tagSusp" title="Apontamento idêntico ao de outra obra — confira no termômetro">⚠️ conferir</span>':""}</td>
       <td class="num">${g.div}</td><td class="num">${g.conf}</td><td class="num">${g.inat||"—"}</td>
       <td>${VALIDADAS[g.obra]?`<span class="tag s-ok">✔️ Validada</span>`:`<span class="tag s-parc">⏳ Pendente</span>`}</td>
+      <td>${COBRANCAS[g.obra]?`<span class="tag s-cob">💰 A cobrar</span>`:`<span class="muted">—</span>`}</td>
       <td class="num">${g.pend?brl(g.pend):"—"}</td><td class="num">${g.maior?brl(g.maior):"—"}</td>
       <td class="num">${g.sem?brl(g.sem):"—"}</td><td>${et}</td></tr>`}).join("")
-    ||`<tr><td colspan="12" class="muted" style="padding:20px">Nenhuma obra no filtro atual.</td></tr>`;
+    ||`<tr><td colspan="13" class="muted" style="padding:20px">Nenhuma obra no filtro atual.</td></tr>`;
   document.getElementById("info").textContent=`Exibindo ${Math.min(limite,G.length)} de ${nnum(G.length)} obras`;
   document.getElementById("mais").hidden=G.length<=limite;
   atualizarBotaoInativos(true);
@@ -743,7 +755,7 @@ function desenharFichaConfronto(){
       <div class="fdesc">${esc(m.desc||"")}${g.mun?" · "+esc(g.mun):""}</div>
       ${obrasSuspeitas().has(num)?`<div class="avisoSusp">⚠️ <b>Coleta a conferir:</b> o apontamento desta obra é idêntico ao de outra obra, o que indica que a busca no termômetro devolveu o resultado errado. Confira no termômetro antes de usar estes números — inclusive a equipe.</div>`:""}
       ${(EQUIPES[num]||{}).equipe?`<div class="fdesc" style="margin-top:2px">👷 Equipe: <b>${esc(EQUIPES[num].equipe)}</b>${EQUIPES[num].data?` · última atualização no termômetro em ${esc(EQUIPES[num].data)}`:""}</div>`:""}
-      <div style="margin-top:6px">${badge("novo")} <span class="tag ${g.naoenc?"s-nao":g.pend>0?"s-pend":g.div>0?"s-maior":"s-ok"}">${g.naoenc?"Não encontrada no termômetro":g.pend>0?"Pendente de pagamento":g.div>0?"Divergência sem pendência":"Conferida"}</span> ${VALIDADAS[num]?`<span class="tag s-ok">✔️ Validada em ${esc(VALIDADAS[num].em)}</span>`:`<span class="tag s-parc">⏳ Pendente de validação</span>`}</div>
+      <div style="margin-top:6px">${badge("novo")} <span class="tag ${g.naoenc?"s-nao":g.pend>0?"s-pend":g.div>0?"s-maior":"s-ok"}">${g.naoenc?"Não encontrada no termômetro":g.pend>0?"Pendente de pagamento":g.div>0?"Divergência sem pendência":"Conferida"}</span> ${VALIDADAS[num]?`<span class="tag s-ok">✔️ Validada em ${esc(VALIDADAS[num].em)}</span>`:`<span class="tag s-parc">⏳ Pendente de validação</span>`}${COBRANCAS[num]?`<span class="tag s-cob">💰 Marcada para cobrança</span>`:""}</div>
     </div></div>
     ${naoenc}
     ${bloco("Pendente de pagamento","pend","🔴",x=>x.sit==="Pendente de pagamento")}
@@ -809,7 +821,8 @@ function abrirFicha(num,tipo){
   document.getElementById("csvobra").textContent = fichaTipo==="conf" ? "CSV do confronto" : "CSV desta obra";
   document.getElementById("relobra").hidden = fichaTipo!=="conf";
   document.getElementById("btnValidar").hidden = fichaTipo!=="conf";
-  if(fichaTipo==="conf") atualizarBotaoValidar(num);
+  document.getElementById("btnCobrar").hidden = fichaTipo!=="conf";
+  if(fichaTipo==="conf"){ atualizarBotaoValidar(num); atualizarBotaoCobrar(num); }
   (fichaTipo==="conf"?desenharFichaConfronto:desenharFicha)();
   document.getElementById("modal").hidden=false; document.body.style.overflow="hidden";
 }
@@ -862,6 +875,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&fichaObra)fecharFic
 document.getElementById("imprimir").onclick=()=>window.print();
 document.getElementById("relobra").onclick=()=>abrirRelatorio(fichaObra);
 document.getElementById("btnValidar").onclick=()=>validarObra(fichaObra);
+document.getElementById("btnCobrar").onclick=()=>marcarCobranca(fichaObra);
 document.getElementById("csvobra").onclick=()=>{
   if(fichaTipo==="conf"){
     const g=confrontoPorObra().find(x=>x.obra===fichaObra); if(!g)return;
@@ -1055,6 +1069,29 @@ function validarObra(obra){
   if(ANALISE_ATUAL) gravarAnalise(ANALISE_ATUAL.id,ANALISE_ATUAL.nome,true);
 }
 
+/* ---------- obras marcadas para cobrança ---------- */
+let COBRANCAS={};
+try{const c=localStorage.getItem("confronto-cobrancas"); if(c) COBRANCAS=JSON.parse(c)}catch(e){}
+function salvarCobrancas(){try{localStorage.setItem("confronto-cobrancas",JSON.stringify(COBRANCAS))}catch(e){}}
+function atualizarBotaoCobrar(obra){
+  const b=document.getElementById("btnCobrar"); if(!b) return;
+  const c=COBRANCAS[obra];
+  b.textContent = c ? `💰 Na cobrança desde ${c.em} — retirar` : "💰 Marcar para cobrança";
+  b.className = c ? "sec" : "cobrar";
+}
+function marcarCobranca(obra){
+  if(COBRANCAS[obra]) delete COBRANCAS[obra];
+  else{
+    const g=confrontoPorObra().find(x=>x.obra===obra);
+    COBRANCAS[obra]={em:new Date().toLocaleString("pt-BR"), valor:g?g.pend:0};
+  }
+  salvarCobrancas(); invalidarConfronto();
+  atualizarBotaoCobrar(obra);
+  if(fichaObra===obra&&fichaTipo==="conf") desenharFichaConfronto();
+  render();
+  if(ANALISE_ATUAL) gravarAnalise(ANALISE_ATUAL.id,ANALISE_ATUAL.nome,true);
+}
+
 /* ---------- análises salvas ---------- */
 const IDX="analises-index";
 let ANALISE_ATUAL=null;
@@ -1065,13 +1102,14 @@ function resumoAtual(){
   const G=(typeof confrontoPorObra==="function"&&CONFRONTO&&CONFRONTO.linhas.length)?confrontoPorObra():[];
   return {obras:G.length, pendencia:G.reduce((a,g)=>a+g.pend,0),
     validadas:G.filter(g=>VALIDADAS[g.obra]).length,
+    cobranca:G.filter(g=>COBRANCAS[g.obra]).reduce((a,g)=>a+g.pend,0),
     lancamentos:D.length};
 }
 function gravarAnalise(id,nome,silencioso){
   const base={id,nome,quando:new Date().toISOString(),
     arquivo:(FONTE&&FONTE.nome)||"", aba:(FONTE&&FONTE.aba)||"", datas:(FONTE&&FONTE.datas)||[],
     confronto:CONFRONTO, equipes:EQUIPES, edicoes:EDICOES,
-    inativos:[...INATIVOS], validadas:VALIDADAS, resumo:resumoAtual()};
+    inativos:[...INATIVOS], validadas:VALIDADAS, cobrancas:COBRANCAS, resumo:resumoAtual()};
   const aviso=t=>{const el=document.getElementById("fonte"); if(el&&!silencioso) el.innerHTML=t};
   let completa=true;
   try{ localStorage.setItem("analise:"+id, JSON.stringify(Object.assign({},base,{aoa:(FONTE&&FONTE.aoa)||null}))); }
@@ -1098,6 +1136,7 @@ function abrirAnalise(id){
   EDICOES=a.edicoes||{}; salvarEdicoes();
   INATIVOS=new Set(a.inativos||[]); salvarInativos(); invalidarConfronto(); UNIT=null;
   VALIDADAS=a.validadas||{}; salvarValidadas();
+  COBRANCAS=a.cobrancas||{}; salvarCobrancas();
   ANALISE_ATUAL={id:a.id,nome:a.nome};
   const el=document.getElementById("fonte");
   if(el) el.innerHTML=`📂 <b>${esc(a.nome)}</b> — salva em ${new Date(a.quando).toLocaleString("pt-BR")}`+
@@ -1144,7 +1183,7 @@ function listarAnalises(){
     <div style="flex:1;min-width:0">
       <div style="font-weight:700">${esc(a.nome)}${ANALISE_ATUAL&&ANALISE_ATUAL.id===a.id?' <span class="tag s-ok">aberta</span>':""}</div>
       <div class="muted" style="font-size:12px">${new Date(a.quando).toLocaleString("pt-BR")}${a.arquivo?" · "+esc(a.arquivo):""}${a.completa?"":" · sem planilha"}</div>
-      <div class="muted" style="font-size:12px">${a.resumo?`${nnum(a.resumo.obras)} obras · ${brl(a.resumo.pendencia)} pendentes · ${a.resumo.validadas} validada(s)`:""}</div>
+      <div class="muted" style="font-size:12px">${a.resumo?`${nnum(a.resumo.obras)} obras · ${brl(a.resumo.pendencia)} pendentes · ${a.resumo.validadas} validada(s)${a.resumo.cobranca?` · 💰 ${brl(a.resumo.cobranca)} a cobrar`:""}`:""}</div>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button data-abrir="${a.id}">Abrir</button>
@@ -1447,7 +1486,7 @@ function relDados(){
   const obras=confrontoPorObra().filter(g=> relObra ? g.obra===relObra :
     (!mun||g.mun===mun)&&(!q||(g.obra+" "+g.mun).toLowerCase().includes(q))&&
     (!fs || (fs==="pend"? g.pend>0 : fs==="maior"? g.maior>0 : fs==="sem"? g.sem>0 :
-             fs==="nao"? g.naoenc : fs==="ok"? (g.div===0&&!g.naoenc) : fs==="pendval"? !VALIDADAS[g.obra] : fs==="val"? !!VALIDADAS[g.obra] : true)));
+             fs==="nao"? g.naoenc : fs==="ok"? (g.div===0&&!g.naoenc) : fs==="pendval"? !VALIDADAS[g.obra] : fs==="val"? !!VALIDADAS[g.obra] : fs==="cobrar"? !!COBRANCAS[g.obra] : true)));
   const out=[];
   for(const g of obras){
     const itens=g.itens.filter(x=>!x.inativo&&sits.includes(x.sit));
